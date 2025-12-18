@@ -1,126 +1,134 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
+from datetime import datetime
 import method
 import currency
-from datetime import datetime
 import database
+import auth_ui
+import export
 
 class PayrollApp(tk.Tk):
-    def __init__(self):
+    def __init__(self, user_data):
         super().__init__()
+        # Store authenticated user
+        self.current_user = user_data
+        
         # --- Application Window ---
-        # Initializes the main window and wires up lifecycle hooks
-        self.title("Salary Calculator")
+        self.title(f"Salary Calculator - {user_data.get('full_name') or user_data['username']}")
         self.geometry("1000x700")
         database.connect()
-        self._build_ui()  # Build all UI sections
+        self._build_ui()
         try:
-            self.entry_name.focus()
+            self.entry_name.focus_set()
         except Exception:
             pass
         self.protocol("WM_DELETE_WINDOW", self.on_close)
-
+        
+        # Add user info to header
+        self._add_user_header()
+    
+    def _add_user_header(self):
+        """Add header showing logged-in user info."""
+        header = tk.Frame(self, height=60)
+        header.pack(side='top', fill='x', before=self.winfo_children()[0], padx=16, pady=(10,0))
+        
+        # Username display
+        user_label = tk.Label(header, 
+                             text=f"User: {self.current_user['username']}",
+                             fg='#2c3e50', font=('Arial', 10))
+        user_label.pack(side='top', anchor='w')
+        
+        # Email display
+        email_label = tk.Label(header, 
+                              text=f"Email: {self.current_user.get('email', '')}",
+                              fg='#2c3e50', font=('Arial', 10))
+        email_label.pack(side='top', anchor='w')
+    
+    def on_logout(self):
+        """Handle logout action."""
+        if messagebox.askyesno("Logout", "Are you sure you want to logout?"):
+            database.close_connection()
+            self.destroy()
+            # Restart authentication
+            main()
+    
     def _build_ui(self):
         """
         Build all UI sections of the app:
-        - Input Section (employee form)
-        - Actions Section (Compute, Delete, Refresh)
-        - Table Section (records list)
+        - Table Section (records list) with action icons
         - Details Section (pay & deduction breakdowns)
         - Summary Section (selected employee totals)
         """
-        frm = tk.Frame(self)
-        frm.pack(fill='x', padx=16, pady=8)
-
-        # --- Input Section ---
-        # Split inputs into two columns to use horizontal space
-        left_fields = [
-            ("Name", "name"),
-            ("Company ID", "company_id"),
-            ("Age", "age"),
-            ("Role", "role"),
-        ]
-        right_fields = [
-            ("Department", "department"),
-            ("Start Month (YYYY-MM)", "start_month"),
-            ("End Month (YYYY-MM)", "end_month"),
-            ("Loan", "loan"),
-        ]
-
+        # Initialize variables dict (needed for potential future use)
         self.vars = {}
+        self.entry_name = None  # No input form
 
-        left_col = tk.Frame(frm)
-        left_col.grid(row=0, column=0, sticky='nw', padx=(0,12))
-        right_col = tk.Frame(frm)
-        right_col.grid(row=0, column=1, sticky='nw')
-
-        for r, (lbl, key) in enumerate(left_fields):
-            tk.Label(left_col, text=lbl + ":").grid(row=r, column=0, sticky='w', pady=4)
-            v = tk.StringVar()
-            self.vars[key] = v
-            entry = tk.Entry(left_col, textvariable=v, width=36)
-            entry.grid(row=r, column=1, padx=6, pady=4)
-            if key == 'name':
-                self.entry_name = entry
-
-        # Build right-side inputs with dropdowns for month ranges
-        now = datetime.now()
-        years = list(range(now.year - 10, now.year + 6))
-        month_options = [f"{y}-{m:02d}" for y in years for m in range(1,13)]
-
-        for r, (lbl, key) in enumerate(right_fields):
-            tk.Label(right_col, text=lbl + ":").grid(row=r, column=0, sticky='w', pady=4)
-            v = tk.StringVar()
-            self.vars[key] = v
-            if key in ("start_month", "end_month"):
-                cb = ttk.Combobox(right_col, values=month_options, textvariable=v, width=34, state='readonly')
-                cb.grid(row=r, column=1, padx=6, pady=4)
-                cb.set(f"{now.year}-{now.month:02d}")
-            else:
-                tk.Entry(right_col, textvariable=v, width=36).grid(row=r, column=1, padx=6, pady=4)
-
-        # (Convert controls moved beside buttons below)
-
-        # --- Actions Section ---
-        # Controls for computing, deleting, and refreshing records
-        btn_frame = tk.Frame(frm)
-        btn_frame.grid(row=1, column=0, columnspan=2, pady=8, sticky='w')
-        tk.Button(btn_frame, text="Compute & Save", command=self.on_compute, bg='lightgreen').pack(side='left', padx=6)
-        tk.Button(btn_frame, text="Delete Record", command=self.on_delete, bg='lightpink').pack(side='left', padx=6)
-        tk.Button(btn_frame, text="Refresh", command=self.on_refresh, bg='lightblue').pack(side='left', padx=6)
-
-        # --- Convert Controls (aligned with buttons, right side) ---
+        # --- Table Section ---
+        # Records list showing overall deductions/salary/total
+        cols = ('Name','ID','Age','Role','Department','Months','Overall Pay','Overall Deductions','Loan','Total Salary','Converted Values')
+        table_frame = tk.Frame(self)
+        table_frame.pack(fill='both', expand=True, padx=16, pady=6)
+        
+        # --- Header with title, action icons, and Convert Controls ---
+        header_frame = tk.Frame(table_frame)
+        header_frame.grid(row=0, column=0, columnspan=2, sticky='ew', pady=(0,8))
+        
+        # Left side: Title
+        tk.Label(header_frame, text="Employee Payroll Data", font=('Arial', 14, 'bold')).pack(side='left')
+        
+        # Right side: Action icons
+        action_frame = tk.Frame(header_frame)
+        action_frame.pack(side='right')
+        
+        # Delete button
+        delete_btn = tk.Button(action_frame, text="Delete", font=('Arial', 10), 
+                              bg='#e74c3c', fg='white', width=8, height=1,
+                              cursor='hand2', command=self.on_delete, relief='flat', padx=10, pady=5)
+        delete_btn.pack(side='left', padx=3)
+        
+        # Refresh button
+        refresh_btn = tk.Button(action_frame, text="Refresh", font=('Arial', 10),
+                               bg='#3498db', fg='white', width=8, height=1,
+                               cursor='hand2', command=self.on_refresh, relief='flat', padx=10, pady=5)
+        refresh_btn.pack(side='left', padx=3)
+        
+        # Add button
+        add_btn = tk.Button(action_frame, text="Add", font=('Arial', 10),
+                           bg='#27ae60', fg='white', width=8, height=1,
+                           cursor='hand2', command=self.on_add_employee, relief='flat', padx=10, pady=5)
+        add_btn.pack(side='left', padx=3)
+        
+        # Convert controls row
+        convert_top = tk.Frame(table_frame)
+        convert_top.grid(row=1, column=0, columnspan=2, sticky='e', pady=(0,4))
         self.convert_currency_var = tk.StringVar(value='PHP')
         try:
             codes = currency.list_currency_codes()
             codes_display = [c.upper() for c in codes]
         except Exception:
             codes_display = ['PHP','USD','EUR','JPY','AUD','GBP']
-        self.convert_combo = ttk.Combobox(btn_frame, values=codes_display, textvariable=self.convert_currency_var, width=12, state='readonly')
+        self.convert_combo = ttk.Combobox(convert_top, values=codes_display, textvariable=self.convert_currency_var, width=12, state='readonly')
         self.convert_combo.pack(side='right', padx=6)
-        tk.Label(btn_frame, text="Convert Into:").pack(side='right')
+        tk.Label(convert_top, text="Convert total salary into:").pack(side='right')
         self.convert_combo.bind('<<ComboboxSelected>>', lambda e: self._update_convert_column())
-
-        # --- Table Section ---
-        # Records list showing overall deductions/salary/total
-        cols = ('Name','ID','Age','Role','Department','Months','Overall Salary','Overall Deductions','Loan','Total Salary','Convert Into')
-        table_frame = tk.Frame(self)
-        table_frame.pack(fill='both', expand=True, padx=16, pady=6)
-        self.tree = ttk.Treeview(table_frame, columns=cols, show='headings', height=10)
+        
+        self.tree = ttk.Treeview(table_frame, columns=cols, show='headings', height=9)
         for c in cols:
             self.tree.heading(c, text=c)
-            if c in ('Overall Deductions','Overall Salary','Total Salary','Convert Into','Loan'):
+            if c in ('Overall Deductions','Overall Pay','Total Salary','Convert Into','Loan'):
                 self.tree.column(c, width=120, anchor='center')
             elif c in ('Name','Role','Department'):
-                self.tree.column(c, width=140, anchor='center')
+                self.tree.column(c, width=120, anchor='center')
+            elif c in ('Months'):
+                self.tree.column(c, width=150, anchor='center')
             else:
                 self.tree.column(c, width=90, anchor='center')
 
         vsb = ttk.Scrollbar(table_frame, orient='vertical', command=self.tree.yview)
         self.tree.configure(yscrollcommand=vsb.set)
-        self.tree.grid(row=0, column=0, sticky='nsew')
-        vsb.grid(row=0, column=1, sticky='ns')
-        table_frame.rowconfigure(0, weight=1)
+        self.tree.grid(row=2, column=0, sticky='nsew')
+        vsb.grid(row=2, column=1, sticky='ns')
+        table_frame.rowconfigure(2, weight=1, minsize=150)
         table_frame.columnconfigure(0, weight=1)
 
         # --- Details Section ---
@@ -153,56 +161,191 @@ class PayrollApp(tk.Tk):
         # Selected/just-saved employee totals and metadata
         summary = tk.LabelFrame(self, text="Employee Selected Summary")
         summary.pack(fill='x', padx=16, pady=6)
+        sum_inner = tk.Frame(summary)
+        sum_inner.pack(fill='both', expand=True, padx=10, pady=10)
+
         self.summary_labels = {}
-        keys = ['Name','ID','Age','Role','Department','Months','Overall Salary','Overall Deductions','Loan','Total Salary']
-        # Allow the value column to expand and wrap to avoid overflow
-        summary.columnconfigure(1, weight=1)
+        keys = ['Name','ID','Age','Role','Department','Months','Overall Pay','Overall Deductions','Loan','Total Salary']
+        sum_inner.columnconfigure(1, weight=1)
         for i,k in enumerate(keys):
-            tk.Label(summary, text=k+':', width=16, anchor='w').grid(row=i, column=0, sticky='w', padx=6, pady=2)
-            lbl = tk.Label(summary, text='', anchor='w')
+            tk.Label(sum_inner, text=k+':', width=16, anchor='w').grid(row=i, column=0, sticky='w', padx=6, pady=2)
+            lbl = tk.Label(sum_inner, text='', anchor='w')
             if k == 'Overall Deductions':
                 lbl.configure(fg='red')
-            elif k == 'Overall Salary':
+            elif k == 'Overall Pay':
                 lbl.configure(fg='green')
             elif k == 'Total Salary':
                 lbl.configure(fg='blue', font=('TkDefaultFont', 10, 'bold'))
-            # Wrap long text and let it expand within the frame
-            lbl.configure(wraplength=600, justify='right')
+            lbl.configure(wraplength=800, justify='left')
             lbl.grid(row=i, column=1, sticky='w', padx=6, pady=2)
             self.summary_labels[k] = lbl
 
+        # --- Bottom Action Buttons ---
+        bottom_frame = tk.Frame(self)
+        bottom_frame.pack(fill='x', padx=16, pady=10)
+        
+        # Export buttons (left side)
+        export_frame = tk.Frame(bottom_frame)
+        export_frame.pack(side='left')
+        
+        export_excel_btn = tk.Button(export_frame, text="📊 Export to Excel", 
+                                     bg='#27ae60', fg='white',
+                                     font=('Arial', 11, 'bold'), cursor='hand2',
+                                     command=self.on_export_excel, relief='flat', 
+                                     padx=20, pady=10)
+        export_excel_btn.pack(side='left', padx=(0, 10))
+        
+        export_pdf_btn = tk.Button(export_frame, text="📄 Export to PDF", 
+                                   bg='#e67e22', fg='white',
+                                   font=('Arial', 11, 'bold'), cursor='hand2',
+                                   command=self.on_export_pdf, relief='flat', 
+                                   padx=20, pady=10)
+        export_pdf_btn.pack(side='left')
+        
+        # Logout button (right side)
+        logout_bottom_btn = tk.Button(bottom_frame, text="🚪 Log out", bg='#e74c3c', fg='white',
+                                     font=('Arial', 12, 'bold'), cursor='hand2',
+                                     command=self.on_logout, relief='flat', 
+                                     padx=50, pady=12)
+        logout_bottom_btn.pack(side='right')
+
         self.tree.bind('<<TreeviewSelect>>', self._on_tree_select)
         self._load_existing()
-
-    def on_compute(self):
+    
+    def on_add_employee(self):
+        """Show dialog to add a new employee."""
+        self._show_employee_dialog()
+    
+    def _show_employee_dialog(self, edit_record=None):
+        """Show dialog for adding or editing employee."""
+        dialog = tk.Toplevel(self)
+        dialog.title("Add Payroll Data" if not edit_record else "Edit Payroll Data")
+        dialog.geometry("450x600")
+        dialog.resizable(False, False)
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        # Center dialog
+        dialog.update_idletasks()
+        x = (dialog.winfo_screenwidth() // 2) - (dialog.winfo_width() // 2)
+        y = (dialog.winfo_screenheight() // 2) - (dialog.winfo_height() // 2)
+        dialog.geometry(f'+{x}+{y}')
+        
+        # Header
+        header = tk.Frame(dialog, bg='#3498db', height=60)
+        header.pack(fill='x')
+        tk.Label(header, text="Add Payroll Data" if not edit_record else "Edit Payroll Data", 
+                font=('Arial', 16, 'bold'), bg='#3498db', fg='white').pack(pady=15)
+        
+        # Create form
+        form_frame = tk.Frame(dialog, padx=30, pady=20)
+        form_frame.pack(fill='both', expand=True)
+        
+        # Generate month options for the next 2 years
+        from datetime import datetime, timedelta
+        current_date = datetime.now()
+        months_options = []
+        for i in range(36):  # 3 years of months
+            date = datetime(current_date.year, current_date.month, 1) + timedelta(days=32*i)
+            date = date.replace(day=1)
+            months_options.append(date.strftime('%Y/%m'))
+        
+        fields = [
+            ('Name:', 'name'),
+            ('Company ID:', 'company_id'),
+            ('Age:', 'age'),
+            ('Role:', 'role'),
+            ('Department:', 'department'),
+            ('Start Date (YYYY/MM):', 'start_date'),
+            ('End Date (YYYY/MM):', 'end_date'),
+            ('Loan:', 'loan'),
+        ]
+        
+        entries = {}
+        for i, (label, key) in enumerate(fields):
+            tk.Label(form_frame, text=label, anchor='w', font=('Arial', 10)).grid(row=i, column=0, sticky='w', pady=10, padx=(0, 10))
+            if key in ('start_date', 'end_date'):
+                var = tk.StringVar(value=current_date.strftime('%Y/%m'))
+                widget = ttk.Combobox(form_frame, textvariable=var, values=months_options, width=28, font=('Arial', 10), state='readonly')
+            else:
+                var = tk.StringVar()
+                widget = tk.Entry(form_frame, textvariable=var, width=30, font=('Arial', 10))
+            widget.grid(row=i, column=1, pady=10, padx=(0, 0), ipady=5)
+            entries[key] = var
+            
+            # Pre-fill if editing
+            if edit_record:
+                if key == 'start_date' and 'start_month' in edit_record:
+                    var.set(edit_record['start_month'])
+                elif key == 'end_date' and 'end_month' in edit_record:
+                    var.set(edit_record['end_month'])
+                elif key in edit_record:
+                    var.set(str(edit_record[key]))
+        
+        # Buttons
+        btn_frame = tk.Frame(dialog)
+        btn_frame.pack(pady=20)
+        
+        def on_save():
+            self.on_compute(entries, dialog)
+        
+        save_btn = tk.Button(btn_frame, text="Save", bg='#27ae60', fg='white',
+                            command=on_save, cursor='hand2', relief='flat', 
+                            font=('Arial', 11, 'bold'), padx=30, pady=8)
+        save_btn.pack(side='left', padx=8)
+        
+        cancel_btn = tk.Button(btn_frame, text="Cancel", bg='#95a5a6', fg='white',
+                              command=dialog.destroy, cursor='hand2', relief='flat', 
+                              font=('Arial', 11, 'bold'), padx=30, pady=8)
+        cancel_btn.pack(side='left', padx=8)
+    
+    def on_compute(self, entries=None, dialog=None):
         """
         Compute & Save handler:
         - Validates inputs and computes via method.save_record
         - Inserts a new row into the Table Section
         - Updates Summary and Details sections
         """
-        data = {k: v.get() for k,v in self.vars.items()}
-
-        # Derive months from start/end month inputs
-        def parse_month(s: str):
-            s = str(s).strip()
-            for fmt in ("%Y-%m", "%m/%Y", "%b %Y", "%B %Y"):
-                try:
-                    dt = datetime.strptime(s, fmt)
-                    return dt.year, dt.month
-                except Exception:
-                    continue
-            raise ValueError("Invalid month format. Use YYYY-MM or MM/YYYY.")
-
+        if entries is None:
+            # Called from old code path (shouldn't happen now)
+            messagebox.showinfo("Info", "Use the Add button to add employees.")
+            return
+            
+        data = {k: v.get() for k,v in entries.items()}
+        
+        # Calculate months from start and end dates
         try:
-            y1, m1 = parse_month(data.get('start_month', ''))
-            y2, m2 = parse_month(data.get('end_month', ''))
-            months = (y2 - y1) * 12 + (m2 - m1) + 1
-            if months <= 0:
-                raise ValueError("End Month must be after or equal to Start Month.")
+            start_date_str = data.get('start_date', '').strip()
+            end_date_str = data.get('end_date', '').strip()
+            
+            if not start_date_str or not end_date_str:
+                raise ValueError("Start Date and End Date are required.")
+            
+            # Parse dates (YYYY-MM format)
+            start_parts = start_date_str.split('/')
+            end_parts = end_date_str.split('/')
+            
+            start_year, start_month_num = int(start_parts[0]), int(start_parts[1])
+            end_year, end_month_num = int(end_parts[0]), int(end_parts[1])
+            
+            # Calculate number of months
+            months = (end_year - start_year) * 12 + (end_month_num - start_month_num) + 1
+            
+            if months < 1:
+                raise ValueError("End Date must be equal to or after Start Date.")
+            
+            if months > 12:
+                raise ValueError("Period cannot exceed 12 months.")
+            
             data['months'] = months
+            data['start_month'] = start_date_str
+            data['end_month'] = end_date_str
+            
         except ValueError as e:
-            messagebox.showwarning("Month range error", str(e))
+            messagebox.showwarning("Validation error", str(e))
+            return
+        except Exception as e:
+            messagebox.showwarning("Date error", "Invalid date format. Please use YYYY/MM format.")
             return
         try:
             record = method.save_record(data)
@@ -214,7 +357,7 @@ class PayrollApp(tk.Tk):
             return
 
         # Table Section: insert newly computed record
-        months_display = f"{record.get('start_month', '').strip()} ({record['months']})"
+        months_display = f"{record.get('start_month', '').strip()} - {record.get('end_month', '').strip()} ({record['months']})"
         # Convert Into column: compute from PHP total using selected currency
         conv_code = str(self.convert_currency_var.get()).upper()
         try:
@@ -236,7 +379,7 @@ class PayrollApp(tk.Tk):
         self.summary_labels['Department'].config(text=record['department'])
         self.summary_labels['Months'].config(text=months_display)
         self.summary_labels['Overall Deductions'].config(text=f"PHP {record['totalD']:,}")
-        self.summary_labels['Overall Salary'].config(text=f"PHP {record['totalS']:,}")
+        self.summary_labels['Overall Pay'].config(text=f"PHP {record['totalS']:,}")
         self.summary_labels['Loan'].config(text=f"PHP {record['loan']:,}")
         self.summary_labels['Total Salary'].config(text=f"PHP {record['total']:,}")
 
@@ -244,13 +387,12 @@ class PayrollApp(tk.Tk):
         # Summary stays in base PHP. No inline conversions.
 
         self._populate_detail_tables_from_record(record)
-
-        for v in self.vars.values():
-            v.set('')
-        try:
-            self.entry_name.focus()
-        except Exception:
-            pass
+        
+        # Close dialog if provided
+        if dialog:
+            dialog.destroy()
+        
+        messagebox.showinfo("Success", "Employee record saved successfully!")
 
     def _load_existing(self):
         """
@@ -259,13 +401,16 @@ class PayrollApp(tk.Tk):
         """
         rows = database.fetch_all()
         for r in rows:
-            # r: id, name, company_id, age, role, department, months, loan, deduction, overall_salary (monthly net), total_salary (overall net), created_at
+            # r: id, name, company_id, age, role, department, months, loan, deduction, overall_salary (monthly net), total_salary (overall net), created_at, start_month, end_month, currency
             payD = int(r[8]) if r[8] is not None else 0                       # monthly deduction (no loan)
             monthly_net = int(r[9]) if r[9] is not None else 0                # monthly net (no loan)
             payB = monthly_net + payD                                         # monthly gross
             total = int(r[10]) if r[10] is not None else monthly_net          # overall net (from DB)
-            # Match the defined columns: ('Name','ID','Age','Role','Department','Months','Overall Salary','Overall Deductions','Total Salary')
-            months_display = f"{str(r[12] or '').strip()} ({r[6]})"
+            # Match the defined columns: ('Name','ID','Age','Role','Department','Months','Overall Pay','Overall Deductions','Total Salary')
+            # Format: start_month - end_month (number of months)
+            start_month = str(r[12] or '').strip()
+            end_month = str(r[13] or '').strip()
+            months_display = f"{start_month} - {end_month} ({r[6]})" if start_month and end_month else f"{start_month or end_month} ({r[6]})"
             conv_code = str(self.convert_currency_var.get()).upper()
             try:
                 rate = currency.get_rate('php', conv_code.lower()) if conv_code != 'PHP' else 1.0
@@ -385,36 +530,66 @@ class PayrollApp(tk.Tk):
         self.summary_labels['Age'].config(text=str(db_row[3]))
         self.summary_labels['Role'].config(text=str(db_row[4]))
         self.summary_labels['Department'].config(text=str(db_row[5]))
-        months_display = f"{str(db_row[12] or '').strip()} ({months})"
+        # Format: start_month - end_month (number of months)
+        start_month = str(db_row[12] or '').strip()
+        end_month = str(db_row[13] or '').strip()
+        months_display = f"{start_month} - {end_month} ({months})" if start_month and end_month else f"{start_month or end_month} ({months})"
         self.summary_labels['Months'].config(text=months_display)
         self.summary_labels['Overall Deductions'].config(text=f"PHP {totalD:,}")
-        self.summary_labels['Overall Salary'].config(text=f"PHP {totalS:,}")
+        self.summary_labels['Overall Pay'].config(text=f"PHP {totalS:,}")
         self.summary_labels['Loan'].config(text=f"PHP {loan:,}")
         self.summary_labels['Total Salary'].config(text=f"PHP {total:,}")
 
-    def _update_convert_column(self):
-        """
-        Recompute Convert Into column when the dropdown changes.
-        """
-        conv_code = str(self.convert_currency_var.get()).upper()
+    def on_export_excel(self):
+        """Export payroll data to Excel file."""
         try:
-            rate = currency.get_rate('php', conv_code.lower()) if conv_code != 'PHP' else 1.0
-        except Exception:
-            rate = 1.0
-        for iid in self.tree.get_children():
-            vals = list(self.tree.item(iid, 'values'))
-            # Total Salary is at index 9 (with Loan column present)
-            try:
-                total_php = int(str(vals[9]).replace('PHP', '').replace(',', '').strip())
-            except Exception:
-                total_php = 0
-            conv_val = int(round(total_php * rate))
-            if len(vals) >= 11:
-                vals[10] = f"{conv_code} {conv_val:,}"
-            else:
-                vals.append(f"{conv_code} {conv_val:,}")
-            self.tree.item(iid, values=tuple(vals))
-
+            # Ask user where to save
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_filename = f"payroll_export_{timestamp}.xlsx"
+            
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".xlsx",
+                filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")],
+                initialfile=default_filename,
+                title="Save Excel Export"
+            )
+            
+            if not filepath:  # User cancelled
+                return
+            
+            # Perform export
+            filename = export.export_to_excel(self.current_user, filepath)
+            messagebox.showinfo("Export Successful", 
+                              f"Payroll data exported successfully!\n\nSaved to:\n{filename}")
+            
+        except Exception as e:
+            messagebox.showerror("Export Failed", f"Failed to export to Excel:\n{str(e)}")
+    
+    def on_export_pdf(self):
+        """Export payroll data to PDF file."""
+        try:
+            # Ask user where to save
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            default_filename = f"payroll_export_{timestamp}.pdf"
+            
+            filepath = filedialog.asksaveasfilename(
+                defaultextension=".pdf",
+                filetypes=[("PDF files", "*.pdf"), ("All files", "*.*")],
+                initialfile=default_filename,
+                title="Save PDF Export"
+            )
+            
+            if not filepath:  # User cancelled
+                return
+            
+            # Perform export
+            filename = export.export_to_pdf(self.current_user, filepath)
+            messagebox.showinfo("Export Successful", 
+                              f"Payroll data exported successfully!\n\nSaved to:\n{filename}")
+            
+        except Exception as e:
+            messagebox.showerror("Export Failed", f"Failed to export to PDF:\n{str(e)}")
+    
     def _populate_detail_tables_from_record(self, record):
         """
         Details Section: populate breakdowns right after compute/save
@@ -438,6 +613,10 @@ class PayrollApp(tk.Tk):
         """
         Details helper: render a breakdown list with optional divider rows.
         """
+        try:
+            treewidget.tag_configure('totalrow', font=('TkDefaultFont', 10, 'bold'))
+        except Exception:
+            pass
         for item in treewidget.get_children():
             treewidget.delete(item)
         for comp, amt in rows:
@@ -446,8 +625,20 @@ class PayrollApp(tk.Tk):
                 treewidget.insert('', tk.END, values=('', ''))
             else:
                 prefix = (str(cur).upper() + ' ') if cur else ''
-                treewidget.insert('', tk.END, values=(comp, f"{prefix}{amt:,}"))
+                tags = ('totalrow',) if str(comp).lower() == 'total' else ()
+                treewidget.insert('', tk.END, values=(comp, f"{prefix}{amt:,}"), tags=tags)
+
+def main():
+    """Main entry point with authentication."""
+    # Show authentication window
+    user_data = auth_ui.authenticate()
+    
+    # If user authenticated successfully, open main app
+    if user_data:
+        app = PayrollApp(user_data)
+        app.mainloop()
+    else:
+        print("Authentication cancelled.")
 
 if __name__ == "__main__":
-    app = PayrollApp()
-    app.mainloop()
+    main()
