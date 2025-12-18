@@ -59,6 +59,15 @@ def connect():
             _cursor.execute("ALTER TABLE salaries ADD COLUMN overall_salary INTEGER DEFAULT 0")
             added = True
 
+        # Add optional start/end month columns for display if missing
+        if 'start_month' not in cols:
+            _cursor.execute("ALTER TABLE salaries ADD COLUMN start_month TEXT")
+        if 'end_month' not in cols:
+            _cursor.execute("ALTER TABLE salaries ADD COLUMN end_month TEXT")
+        # Add currency column to persist selected currency per record
+        if 'currency' not in cols:
+            _cursor.execute("ALTER TABLE salaries ADD COLUMN currency TEXT DEFAULT 'PHP'")
+
         if added:
             # Backfill existing rows: compute deduction and overall_salary from loan/total_salary when possible
             # Rows may have loan stored; if not, assume 0.
@@ -83,8 +92,8 @@ def insert_salary(record):
     overall = record.get('overall_salary', (_BASIC + _HRA + _CONVEYANCE) - deduction)
     cursor.execute('''
         INSERT INTO salaries
-        (name, company_id, age, role, department, months, loan, total_salary, deduction, overall_salary, created_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        (name, company_id, age, role, department, months, loan, total_salary, deduction, overall_salary, created_at, start_month, end_month, currency)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
         record.get('name'),
         record.get('company_id'),
@@ -96,7 +105,10 @@ def insert_salary(record):
         record.get('total_salary'),
         deduction,
         overall,
-        datetime.utcnow().isoformat()
+        datetime.utcnow().isoformat(),
+        record.get('start_month'),
+        record.get('end_month'),
+        str(record.get('currency', 'PHP')).upper()
     ))
     conn.commit()
 
@@ -104,7 +116,7 @@ def fetch_all():
     conn, cursor = connect()
     # select in consistent order; if columns missing for some reason, PRAGMA ensures they exist
     cursor.execute('''
-        SELECT id, name, company_id, age, role, department, months, loan, deduction, overall_salary, total_salary, created_at
+        SELECT id, name, company_id, age, role, department, months, loan, deduction, overall_salary, total_salary, created_at, start_month, end_month, currency
         FROM salaries ORDER BY id
     ''')
     return cursor.fetchall()
@@ -112,7 +124,7 @@ def fetch_all():
 def fetch_one(record_id):
     conn, cursor = connect()
     cursor.execute('''
-        SELECT id, name, company_id, age, role, department, months, loan, deduction, overall_salary, total_salary, created_at
+        SELECT id, name, company_id, age, role, department, months, loan, deduction, overall_salary, total_salary, created_at, start_month, end_month, currency
         FROM salaries WHERE id = ?
     ''', (record_id,))
     return cursor.fetchone()

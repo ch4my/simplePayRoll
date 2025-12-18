@@ -13,8 +13,8 @@ def compute_pay() -> int:
     return BASIC + HRA + CONVEYANCE
 
 def compute_deduction(loan: int) -> int:
-    # Monthly deductions total (includes loan)
-    return TAX + HEALTH_INSURANCE + max(0, int(loan))
+    # Monthly deductions total (EXCLUDES loan; loan is one-time)
+    return TAX + HEALTH_INSURANCE
 
 def compute_net_salary(months: int, loan: int) -> int:
     # Overall net for given months
@@ -46,14 +46,14 @@ def save_record(data: Dict):
 
     # Monthly figures
     payB = compute_pay()                 # monthly gross
-    payD = compute_deduction(loan)       # monthly deductions
-    net_monthly = payB - payD            # monthly net
+    payD = compute_deduction(loan)       # monthly deductions (no loan)
+    net_monthly = payB - payD            # monthly net (no loan)
 
     # Totals for the selected number of months
     totalS = payB * months               # total salary (gross) for n months
-    totalD = payD * months               # total deduction for n months
-    # Overall total net = totalS - totalD (gross minus deductions)
-    total = totalS - totalD
+    totalD = payD * months               # total deduction for n months (no loan)
+    # Overall total net = totalS - totalD - loan(one-time)
+    total = totalS - totalD - loan
 
     currency = str(data.get('currency', 'php')).lower()
     fx_date = str(data.get('fx_date', 'latest')).strip() or 'latest'
@@ -77,6 +77,8 @@ def save_record(data: Dict):
         'age': int(data['age']),
         'role': data['role'].strip(),
         'department': data['department'].strip(),
+        'start_month': str(data.get('start_month', '')).strip(),
+        'end_month': str(data.get('end_month', '')).strip(),
         'months': months,
         'loan': loan,
 
@@ -88,9 +90,9 @@ def save_record(data: Dict):
         'total': total,
 
         # Back-compat names currently used by app/database
-        'deduction': payD,                # monthly deduction
-        'overall_salary': net_monthly,    # monthly net
-        'total_salary': total,            # overall net for n months
+        'deduction': payD,                # monthly deduction (no loan)
+        'overall_salary': net_monthly,    # monthly net (no loan)
+        'total_salary': total,            # overall net for n months minus one-time loan
 
         # Currency metadata and PHP conversions (for net values)
         'currency': currency,

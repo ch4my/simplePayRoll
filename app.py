@@ -79,32 +79,7 @@ class PayrollApp(tk.Tk):
             else:
                 tk.Entry(right_col, textvariable=v, width=36).grid(row=r, column=1, padx=6, pady=4)
 
-        # Currency input (optional)
-        # Ensure the variable exists before binding to combobox
-        if 'currency' not in self.vars:
-            self.vars['currency'] = tk.StringVar(value='PHP')
-
-        # Populate currency list dynamically from API; fall back to a small list on failure
-        try:
-            codes = currency.list_currency_codes()
-            codes_display = [c.upper() for c in codes]
-        except Exception:
-            codes_display = ['PHP','USD','EUR','JPY','AUD','GBP']
-
-        curr_combo = ttk.Combobox(
-            right_col,
-            values=codes_display,
-            textvariable=self.vars['currency'],
-            width=34,
-            state='readonly'
-        )
-        # Put it on the next row after the right_fields entries
-        curr_row = len(right_fields)
-        curr_combo.grid(row=curr_row, column=1, padx=6, pady=4)
-        # Default to PHP if available, otherwise first in the list
-        default_curr = 'PHP' if 'PHP' in curr_combo['values'] else (curr_combo['values'][0] if curr_combo['values'] else 'PHP')
-        curr_combo.set(default_curr)
-        tk.Label(right_col, text="Currency:").grid(row=curr_row, column=0, sticky='w', pady=4)
+        # (Convert controls moved beside buttons below)
 
         # --- Actions Section ---
         # Controls for computing, deleting, and refreshing records
@@ -114,15 +89,27 @@ class PayrollApp(tk.Tk):
         tk.Button(btn_frame, text="Delete Record", command=self.on_delete, bg='lightpink').pack(side='left', padx=6)
         tk.Button(btn_frame, text="Refresh", command=self.on_refresh, bg='lightblue').pack(side='left', padx=6)
 
+        # --- Convert Controls (aligned with buttons, right side) ---
+        self.convert_currency_var = tk.StringVar(value='PHP')
+        try:
+            codes = currency.list_currency_codes()
+            codes_display = [c.upper() for c in codes]
+        except Exception:
+            codes_display = ['PHP','USD','EUR','JPY','AUD','GBP']
+        self.convert_combo = ttk.Combobox(btn_frame, values=codes_display, textvariable=self.convert_currency_var, width=12, state='readonly')
+        self.convert_combo.pack(side='right', padx=6)
+        tk.Label(btn_frame, text="Convert Into:").pack(side='right')
+        self.convert_combo.bind('<<ComboboxSelected>>', lambda e: self._update_convert_column())
+
         # --- Table Section ---
         # Records list showing overall deductions/salary/total
-        cols = ('Name','ID','Age','Role','Department','Months','Overall Salary','Overall Deductions','Total Salary')
+        cols = ('Name','ID','Age','Role','Department','Months','Overall Salary','Overall Deductions','Loan','Total Salary','Convert Into')
         table_frame = tk.Frame(self)
         table_frame.pack(fill='both', expand=True, padx=16, pady=6)
         self.tree = ttk.Treeview(table_frame, columns=cols, show='headings', height=10)
         for c in cols:
             self.tree.heading(c, text=c)
-            if c in ('Overall Deductions','Overall Salary','Total Salary'):
+            if c in ('Overall Deductions','Overall Salary','Total Salary','Convert Into','Loan'):
                 self.tree.column(c, width=120, anchor='center')
             elif c in ('Name','Role','Department'):
                 self.tree.column(c, width=140, anchor='center')
@@ -167,7 +154,9 @@ class PayrollApp(tk.Tk):
         summary = tk.LabelFrame(self, text="Employee Selected Summary")
         summary.pack(fill='x', padx=16, pady=6)
         self.summary_labels = {}
-        keys = ['Name','ID','Age','Role','Department','Months','Overall Salary','Overall Deductions','Total Salary']
+        keys = ['Name','ID','Age','Role','Department','Months','Overall Salary','Overall Deductions','Loan','Total Salary']
+        # Allow the value column to expand and wrap to avoid overflow
+        summary.columnconfigure(1, weight=1)
         for i,k in enumerate(keys):
             tk.Label(summary, text=k+':', width=16, anchor='w').grid(row=i, column=0, sticky='w', padx=6, pady=2)
             lbl = tk.Label(summary, text='', anchor='w')
@@ -177,6 +166,8 @@ class PayrollApp(tk.Tk):
                 lbl.configure(fg='green')
             elif k == 'Total Salary':
                 lbl.configure(fg='blue', font=('TkDefaultFont', 10, 'bold'))
+            # Wrap long text and let it expand within the frame
+            lbl.configure(wraplength=600, justify='right')
             lbl.grid(row=i, column=1, sticky='w', padx=6, pady=2)
             self.summary_labels[k] = lbl
 
@@ -223,10 +214,18 @@ class PayrollApp(tk.Tk):
             return
 
         # Table Section: insert newly computed record
+        months_display = f"{record.get('start_month', '').strip()} ({record['months']})"
+        # Convert Into column: compute from PHP total using selected currency
+        conv_code = str(self.convert_currency_var.get()).upper()
+        try:
+            rate = currency.get_rate('php', conv_code.lower()) if conv_code != 'PHP' else 1.0
+        except Exception:
+            rate = 1.0
+        conv_val = int(round(record['total'] * rate))
         item = self.tree.insert('', tk.END, values=(
             record['name'], record['company_id'], record['age'],
-            record['role'], record['department'], record['months'],
-            f"{record['totalS']:,}", f"{record['totalD']:,}", f"{record['total']:,}"
+            record['role'], record['department'], months_display,
+            f"PHP {record['totalS']:,}", f"PHP {record['totalD']:,}", f"PHP {record['loan']:,}", f"PHP {record['total']:,}", f"{conv_code} {conv_val:,}"
         ))
 
         # update summary and detail subtables
@@ -235,19 +234,14 @@ class PayrollApp(tk.Tk):
         self.summary_labels['Age'].config(text=str(record['age']))
         self.summary_labels['Role'].config(text=record['role'])
         self.summary_labels['Department'].config(text=record['department'])
-        self.summary_labels['Months'].config(text=str(record['months']))
-        self.summary_labels['Overall Deductions'].config(text=f"{record['totalD']:,}")
-        self.summary_labels['Overall Salary'].config(text=f"{record['totalS']:,}")
-        self.summary_labels['Total Salary'].config(text=f"{record['total']:,}")
+        self.summary_labels['Months'].config(text=months_display)
+        self.summary_labels['Overall Deductions'].config(text=f"PHP {record['totalD']:,}")
+        self.summary_labels['Overall Salary'].config(text=f"PHP {record['totalS']:,}")
+        self.summary_labels['Loan'].config(text=f"PHP {record['loan']:,}")
+        self.summary_labels['Total Salary'].config(text=f"PHP {record['total']:,}")
 
         # Case-insensitive currency check
-        if record.get('currency') and str(record['currency']).upper() != 'PHP':
-            self.summary_labels['Overall Salary'].config(
-                text=f"{record['overall_salary']:,} ({record['overall_salary_php']:,} PHP @ {record['fx_rate']:.4f})"
-            )
-            self.summary_labels['Total Salary'].config(
-                text=f"{record['total']:,} ({record['total_salary_php']:,} PHP @ {record['fx_rate']:.4f})"
-            )
+        # Summary stays in base PHP. No inline conversions.
 
         self._populate_detail_tables_from_record(record)
 
@@ -266,13 +260,20 @@ class PayrollApp(tk.Tk):
         rows = database.fetch_all()
         for r in rows:
             # r: id, name, company_id, age, role, department, months, loan, deduction, overall_salary (monthly net), total_salary (overall net), created_at
-            payD = int(r[8]) if r[8] is not None else 0                       # monthly deduction
-            monthly_net = int(r[9]) if r[9] is not None else 0                # monthly net
+            payD = int(r[8]) if r[8] is not None else 0                       # monthly deduction (no loan)
+            monthly_net = int(r[9]) if r[9] is not None else 0                # monthly net (no loan)
             payB = monthly_net + payD                                         # monthly gross
             total = int(r[10]) if r[10] is not None else monthly_net          # overall net (from DB)
             # Match the defined columns: ('Name','ID','Age','Role','Department','Months','Overall Salary','Overall Deductions','Total Salary')
+            months_display = f"{str(r[12] or '').strip()} ({r[6]})"
+            conv_code = str(self.convert_currency_var.get()).upper()
+            try:
+                rate = currency.get_rate('php', conv_code.lower()) if conv_code != 'PHP' else 1.0
+            except Exception:
+                rate = 1.0
+            conv_val = int(round(total * rate))
             self.tree.insert('', tk.END, iid=str(r[0]), values=(
-                r[1], r[2], r[3], r[4], r[5], r[6], f"{payB:,}", f"{payD:,}", f"{total:,}"
+                r[1], r[2], r[3], r[4], r[5], months_display, f"PHP {payB:,}", f"PHP {payD:,}", f"PHP {int(r[7] or 0):,}", f"PHP {total:,}", f"{conv_code} {conv_val:,}"
             ))
 
     def on_delete(self):
@@ -359,7 +360,7 @@ class PayrollApp(tk.Tk):
         payB = monthly_net + payD                                             # monthly gross
         totalS = payB * months
         totalD = payD * months
-        total = int(db_row[10]) if db_row[10] is not None else (monthly_net * months)
+        total = int(db_row[10]) if db_row[10] is not None else (monthly_net * months - loan)
 
         # Use static components for display; compute totals from the DB row to avoid recompute drift
         pay_components = [
@@ -371,12 +372,12 @@ class PayrollApp(tk.Tk):
         ded_components = [
             ('Tax', method.TAX),
             ('Health Insurance', method.HEALTH_INSURANCE),
-            ('Loan', loan),
             ('Total', payD)
         ]
 
-        self._populate_tree(self.pay_tree, pay_components)
-        self._populate_tree(self.ded_tree, ded_components)
+        # Breakdown tables remain in base PHP
+        self._populate_tree(self.pay_tree, pay_components, 'PHP')
+        self._populate_tree(self.ded_tree, ded_components, 'PHP')
 
         # Update Summary Section to reflect selected row values
         self.summary_labels['Name'].config(text=str(db_row[1]))
@@ -384,10 +385,35 @@ class PayrollApp(tk.Tk):
         self.summary_labels['Age'].config(text=str(db_row[3]))
         self.summary_labels['Role'].config(text=str(db_row[4]))
         self.summary_labels['Department'].config(text=str(db_row[5]))
-        self.summary_labels['Months'].config(text=str(months))
-        self.summary_labels['Overall Deductions'].config(text=f"{totalD:,}")
-        self.summary_labels['Overall Salary'].config(text=f"{totalS:,}")
-        self.summary_labels['Total Salary'].config(text=f"{total:,}")
+        months_display = f"{str(db_row[12] or '').strip()} ({months})"
+        self.summary_labels['Months'].config(text=months_display)
+        self.summary_labels['Overall Deductions'].config(text=f"PHP {totalD:,}")
+        self.summary_labels['Overall Salary'].config(text=f"PHP {totalS:,}")
+        self.summary_labels['Loan'].config(text=f"PHP {loan:,}")
+        self.summary_labels['Total Salary'].config(text=f"PHP {total:,}")
+
+    def _update_convert_column(self):
+        """
+        Recompute Convert Into column when the dropdown changes.
+        """
+        conv_code = str(self.convert_currency_var.get()).upper()
+        try:
+            rate = currency.get_rate('php', conv_code.lower()) if conv_code != 'PHP' else 1.0
+        except Exception:
+            rate = 1.0
+        for iid in self.tree.get_children():
+            vals = list(self.tree.item(iid, 'values'))
+            # Total Salary is at index 9 (with Loan column present)
+            try:
+                total_php = int(str(vals[9]).replace('PHP', '').replace(',', '').strip())
+            except Exception:
+                total_php = 0
+            conv_val = int(round(total_php * rate))
+            if len(vals) >= 11:
+                vals[10] = f"{conv_code} {conv_val:,}"
+            else:
+                vals.append(f"{conv_code} {conv_val:,}")
+            self.tree.item(iid, values=tuple(vals))
 
     def _populate_detail_tables_from_record(self, record):
         """
@@ -403,13 +429,12 @@ class PayrollApp(tk.Tk):
         ded_components = [
             ('Tax', method.TAX),
             ('Health Insurance', method.HEALTH_INSURANCE),
-            ('Loan', record['loan']),
             ('Total', record['payD'])
         ]
-        self._populate_tree(self.pay_tree, pay_components)
-        self._populate_tree(self.ded_tree, ded_components)
+        self._populate_tree(self.pay_tree, pay_components, 'PHP')
+        self._populate_tree(self.ded_tree, ded_components, 'PHP')
 
-    def _populate_tree(self, treewidget, rows):
+    def _populate_tree(self, treewidget, rows, cur: str | None = None):
         """
         Details helper: render a breakdown list with optional divider rows.
         """
@@ -420,7 +445,8 @@ class PayrollApp(tk.Tk):
                 # divider row: a thin separator line with no values
                 treewidget.insert('', tk.END, values=('', ''))
             else:
-                treewidget.insert('', tk.END, values=(comp, f"{amt:,}"))
+                prefix = (str(cur).upper() + ' ') if cur else ''
+                treewidget.insert('', tk.END, values=(comp, f"{prefix}{amt:,}"))
 
 if __name__ == "__main__":
     app = PayrollApp()
