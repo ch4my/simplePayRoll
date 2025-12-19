@@ -1,6 +1,5 @@
 from typing import Dict
-import database
-from currency import get_rate  # add this import
+from currency import get_rate
 
 BASIC = 25000
 HRA = 5000
@@ -9,22 +8,30 @@ TAX = 500
 HEALTH_INSURANCE = 1500
 
 def compute_pay() -> int:
-    # Monthly gross (pay breakdown total)
+    #********************************
+    #Compute gross pay
+    #********************************
     return BASIC + HRA + CONVEYANCE
 
 def compute_deduction(loan: int) -> int:
-    # Monthly deductions total (EXCLUDES loan; loan is one-time)
+    #********************************
+    #Compute deductions
+    #********************************
     return TAX + HEALTH_INSURANCE
 
 def compute_net_salary(months: int, loan: int) -> int:
-    # Overall net for given months
+    #********************************
+    #Compute net salary
+    #********************************
     payB = compute_pay()
     payD = compute_deduction(loan)
     return (payB - payD) * int(months)
 
 def validate_inputs(data: Dict) -> tuple[bool, str]:
     required = ['name','company_id','age','role','department','months','loan']
-    # allow optional currency/fx_date
+    #********************************
+    #Validate required fields
+    #********************************
     for k in required:
         if not str(data.get(k,'')).strip():
             return False, f"Field '{k}' is required."
@@ -36,7 +43,54 @@ def validate_inputs(data: Dict) -> tuple[bool, str]:
         return False, "Age, months and loan must be integers."
     return True, ""
 
-def save_record(data: Dict):
+def validate_and_parse_dates(start_date_str: str, end_date_str: str) -> tuple[int, str, str]:
+    #********************************
+    #Parse validate dates
+    #********************************
+    if not start_date_str or not end_date_str:
+        raise ValueError("Start Date and End Date are required.")
+    
+    try:
+        start_parts = start_date_str.split('/')
+        end_parts = end_date_str.split('/')
+        start_year, start_month_num = int(start_parts[0]), int(start_parts[1])
+        end_year, end_month_num = int(end_parts[0]), int(end_parts[1])
+    except (ValueError, IndexError):
+        raise ValueError("Invalid date format. Please use YYYY/MM format.")
+    
+    months = (end_year - start_year) * 12 + (end_month_num - start_month_num) + 1
+    
+    if months < 1:
+        raise ValueError("End Date must be equal to or after Start Date.")
+    if months > 12:
+        raise ValueError("Period cannot exceed 12 months.")
+    
+    return months, start_date_str, end_date_str
+
+def compute_selected_totals(db_row: tuple, months: int = None) -> dict:
+    #********************************
+    #Compute salary totals
+    #********************************
+    loan = int(db_row[7]) if db_row[7] is not None else 0
+    months = months or (int(db_row[6]) if db_row[6] is not None else 1)
+    payD = int(db_row[8]) if db_row[8] is not None else 0
+    monthly_net = int(db_row[9]) if db_row[9] is not None else 0
+    payB = monthly_net + payD
+    totalS = payB * months
+    totalD = payD * months
+    total = int(db_row[10]) if db_row[10] is not None else (monthly_net * months - loan)
+    
+    return {
+        'loan': loan,
+        'months': months,
+        'payD': payD,
+        'payB': payB,
+        'totalS': totalS,
+        'totalD': totalD,
+        'total': total
+    }
+
+def compute_record(data: Dict):
     ok, msg = validate_inputs(data)
     if not ok:
         raise ValueError(msg)
@@ -101,8 +155,7 @@ def save_record(data: Dict):
         'overall_salary_php': net_monthly_php,
         'total_salary_php': total_php
     }
-    database.insert_salary(record)
     return record
 
-def delete_record(record_id: int):
-    database.delete_data(record_id)
+# Database operations are handled in database.py and the UI layer.
+# This module focuses on business logic computations only.

@@ -12,7 +12,6 @@ _cursor = None
 _auth_conn = None
 _auth_cursor = None
 
-# constants duplicated from method.py for safe migration
 _BASIC = 25000
 _HRA = 5000
 _CONVEYANCE = 2500
@@ -23,22 +22,26 @@ def _compute_deduction(loan: int) -> int:
     return _TAX + _HEALTH_INSURANCE + max(0, int(loan))
 
 def _compute_overall() -> int:
-    # kept for compatibility but avoid using this alone for rows that have loan
+    #********************************
+    #Compute overall salary
+    #********************************
     return _BASIC + _HRA + _CONVEYANCE - (_TAX + _HEALTH_INSURANCE)
 
 def connect():
-    """
-    Open DB and ensure the salaries table has deduction and overall_salary columns.
-    If columns are missing, ALTER the table and backfill values for existing rows.
-    """
+    #********************************
+    #Initialize database
+    #********************************
     global _conn, _cursor
     if _conn is None:
         _conn = sqlite3.connect(DB_PATH)
         _cursor = _conn.cursor()
-        # Create table if it doesn't exist (may be older schema without new columns)
+        #********************************
+        #Create table
+        #********************************
         _cursor.execute('''
         CREATE TABLE IF NOT EXISTS salaries (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
             name TEXT NOT NULL,
             company_id TEXT NOT NULL,
             age INTEGER,
@@ -52,12 +55,20 @@ def connect():
         ''')
         _conn.commit()
 
-        # Inspect columns
+        #********************************
+        #Inspect columns
+        #********************************
         _cursor.execute("PRAGMA table_info('salaries')")
         cols = [_r[1] for _r in _cursor.fetchall()]
 
-        # If deduction column missing, add deduction and overall_salary columns
+        #********************************
+        #Add missing columns
+        #********************************
         added = False
+        # ensure user_id exists to scope data per authenticated user
+        if 'user_id' not in cols:
+            _cursor.execute("ALTER TABLE salaries ADD COLUMN user_id INTEGER")
+            added = True
         if 'deduction' not in cols:
             _cursor.execute("ALTER TABLE salaries ADD COLUMN deduction INTEGER DEFAULT 0")
             added = True
@@ -65,42 +76,38 @@ def connect():
             _cursor.execute("ALTER TABLE salaries ADD COLUMN overall_salary INTEGER DEFAULT 0")
             added = True
 
-        # Add optional start/end month columns for display if missing
+        #********************************
+        #Add optional columns
+        #********************************
         if 'start_month' not in cols:
             _cursor.execute("ALTER TABLE salaries ADD COLUMN start_month TEXT")
         if 'end_month' not in cols:
             _cursor.execute("ALTER TABLE salaries ADD COLUMN end_month TEXT")
-        # Add currency column to persist selected currency per record
         if 'currency' not in cols:
             _cursor.execute("ALTER TABLE salaries ADD COLUMN currency TEXT DEFAULT 'PHP'")
 
         if added:
-            # Backfill existing rows: compute deduction and overall_salary from loan/total_salary when possible
-            # Rows may have loan stored; if not, assume 0.
             _cursor.execute("SELECT id, loan FROM salaries")
             rows = _cursor.fetchall()
             for rid, loan in rows:
                 loan_val = int(loan) if loan is not None else 0
                 ded = _compute_deduction(loan_val)
-                # overall must subtract the same deduction (including loan)
                 overall = (_BASIC + _HRA + _CONVEYANCE) - ded
-                # store per-month overall (net) and deduction
                 _cursor.execute("UPDATE salaries SET deduction = ?, overall_salary = ? WHERE id = ?", (ded, overall, rid))
             _conn.commit()
 
     return _conn, _cursor
 
-def insert_salary(record):
+def insert_salary(record, user_id: int):
     conn, cursor = connect()
-    # ensure keys exist (for old callers that only provided total_salary)
     deduction = record.get('deduction', _compute_deduction(record.get('loan', 0)))
-    # compute overall per-month as gross pay minus the actual deduction (which includes loan)
     overall = record.get('overall_salary', (_BASIC + _HRA + _CONVEYANCE) - deduction)
     cursor.execute('''
         INSERT INTO salaries
-        (name, company_id, age, role, department, months, loan, total_salary, deduction, overall_salary, created_at, start_month, end_month, currency)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        (user_id, name, company_id, age, role, department, months, loan, total_salary, deduction, overall_salary, created_at, start_month, end_month, currency)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     ''', (
+        int(user_id),
         record.get('name'),
         record.get('company_id'),
         record.get('age'),
@@ -117,27 +124,82 @@ def insert_salary(record):
         str(record.get('currency', 'PHP')).upper()
     ))
     conn.commit()
+    return cursor.lastrowid
 
-def fetch_all():
+def fetch_all(user_id: int):
     conn, cursor = connect()
-    # select in consistent order; if columns missing for some reason, PRAGMA ensures they exist
     cursor.execute('''
         SELECT id, name, company_id, age, role, department, months, loan, deduction, overall_salary, total_salary, created_at, start_month, end_month, currency
-        FROM salaries ORDER BY id
-    ''')
+        FROM salaries WHERE user_id = ? ORDER BY id
+    ''', (int(user_id),))
     return cursor.fetchall()
 
-def fetch_one(record_id):
+def fetch_one(record_id, user_id: int | None = None):
     conn, cursor = connect()
-    cursor.execute('''
-        SELECT id, name, company_id, age, role, department, months, loan, deduction, overall_salary, total_salary, created_at, start_month, end_month, currency
-        FROM salaries WHERE id = ?
-    ''', (record_id,))
+    if user_id is None:
+        cursor.execute('''
+            SELECT id, name, company_id, age, role, department, months, loan, deduction, overall_salary, total_salary, created_at, start_month, end_month, currency
+            FROM salaries WHERE id = ?
+        ''', (record_id,))
+    else:
+        cursor.execute('''
+            SELECT id, name, company_id, age, role, department, months, loan, deduction, overall_salary, total_salary, created_at, start_month, end_month, currency
+            FROM salaries WHERE id = ? AND user_id = ?
+        ''', (record_id, int(user_id)))
     return cursor.fetchone()
 
-def delete_data(record_id):
+def load_and_format_records(currency_code: str = 'PHP', user_id: int | None = None) -> list:
+    """
+    Fetch all records from DB and format for table display.
+    Returns list of tuples for Treeview: (name, id, age, role, dept, months_display, payB, payD, loan, total, converted).
+    """
+    from currency import get_rate
+    
+    if user_id is None:
+        rows = []
+    else:
+        rows = fetch_all(int(user_id))
+    try:
+        rate = get_rate('php', currency_code.lower()) if currency_code != 'PHP' else 1.0
+    except Exception:
+        rate = 1.0
+    
+    formatted = []
+    for r in rows:
+        payD = int(r[8]) if r[8] is not None else 0
+        monthly_net = int(r[9]) if r[9] is not None else 0
+        payB = monthly_net + payD
+        total = int(r[10]) if r[10] is not None else monthly_net
+        
+        start_month = str(r[12] or '').strip()
+        end_month = str(r[13] or '').strip()
+        months_display = f"{start_month} - {end_month} ({r[6]})" if start_month and end_month else f"{start_month or end_month} ({r[6]})"
+        
+        conv_val = int(round(total * rate))
+        
+        formatted.append((
+            r[0],  # id (for iid)
+            r[1],  # name
+            r[2],  # company_id
+            r[3],  # age
+            r[4],  # role
+            r[5],  # department
+            months_display,
+            f"PHP {payB:,}",
+            f"PHP {payD:,}",
+            f"PHP {int(r[7] or 0):,}",
+            f"PHP {total:,}",
+            f"{currency_code} {conv_val:,}"
+        ))
+    
+    return formatted
+
+def delete_data(record_id, user_id: int | None = None):
     conn, cursor = connect()
-    cursor.execute('DELETE FROM salaries WHERE id = ?', (record_id,))
+    if user_id is None:
+        cursor.execute('DELETE FROM salaries WHERE id = ?', (record_id,))
+    else:
+        cursor.execute('DELETE FROM salaries WHERE id = ? AND user_id = ?', (record_id, int(user_id)))
     conn.commit()
 
 def close_connection():

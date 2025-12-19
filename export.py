@@ -6,9 +6,13 @@ from reportlab.lib.pagesizes import letter, landscape
 from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+import os
 import database
+import currency
 
-def export_to_excel(user_data: dict, filename: str = None):
+def export_to_excel(user_data: dict, filename: str = None, target_currency: str = 'PHP'):
     """
     Export payroll data to Excel with metadata header.
     Returns the filename used.
@@ -17,9 +21,15 @@ def export_to_excel(user_data: dict, filename: str = None):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"payroll_export_{timestamp}.xlsx"
     
-    # Fetch all records
-    records = database.fetch_all()
+    # Fetch records for this user
+    records = database.fetch_all(user_data['id'])
     
+    target = (target_currency or 'PHP').upper()
+    try:
+        rate = currency.get_rate('php', target.lower()) if target != 'PHP' else 1.0
+    except Exception:
+        rate = 1.0
+
     # Create workbook
     wb = Workbook()
     ws = wb.active
@@ -29,7 +39,8 @@ def export_to_excel(user_data: dict, filename: str = None):
     header_fill = PatternFill(start_color="2C3E50", end_color="2C3E50", fill_type="solid")
     header_font = Font(color="FFFFFF", bold=True, size=12)
     
-    ws.merge_cells('A1:K1')
+    # We have 13 columns now; merge across A1:M1
+    ws.merge_cells('A1:M1')
     ws['A1'] = "PAYROLL SYSTEM - EMPLOYEE DATA EXPORT"
     ws['A1'].font = Font(bold=True, size=14, color="2C3E50")
     ws['A1'].alignment = Alignment(horizontal='center', vertical='center')
@@ -41,6 +52,7 @@ def export_to_excel(user_data: dict, filename: str = None):
         ["Username:", user_data['username']],
         ["Email:", user_data.get('email', 'N/A')],
         ["Total Records:", len(records)],
+        ["Converted Currency:", target],
         ["", ""]  # Empty row for spacing
     ]
     
@@ -52,7 +64,8 @@ def export_to_excel(user_data: dict, filename: str = None):
     # --- Table Header ---
     header_row = 8
     headers = ['ID', 'Name', 'Company ID', 'Age', 'Role', 'Department', 
-               'Period', 'Months', 'Overall Pay', 'Overall Deductions', 'Loan', 'Total Salary']
+               'Period', 'Months', 'Overall Pay', 'Overall Deductions', 'Loan', 'Total Salary',
+               f'Converted Value ({target})']
     
     for col_idx, header in enumerate(headers, start=1):
         cell = ws.cell(row=header_row, column=col_idx, value=header)
@@ -82,6 +95,7 @@ def export_to_excel(user_data: dict, filename: str = None):
         total_gross = monthly_gross * months
         total_deductions = monthly_deduction * months
         total_net = int(record[10]) if record[10] is not None else 0
+        converted = int(round(total_net * rate))
         
         # Format period
         start_month = str(record[12] or '').strip()
@@ -100,7 +114,8 @@ def export_to_excel(user_data: dict, filename: str = None):
             f"PHP {total_gross:,}",  # Overall Pay
             f"PHP {total_deductions:,}",  # Overall Deductions
             f"PHP {loan:,}",  # Loan
-            f"PHP {total_net:,}"  # Total Salary
+            f"PHP {total_net:,}",  # Total Salary
+            f"{target} {converted:,}"
         ]
         
         for col_idx, value in enumerate(row_data, start=1):
@@ -111,13 +126,13 @@ def export_to_excel(user_data: dict, filename: str = None):
                 top=Side(style='thin'),
                 bottom=Side(style='thin')
             )
-            if col_idx in [9, 10, 11, 12]:  # Money columns
+            if col_idx in [9, 10, 11, 12, 13]:  # Money columns
                 cell.alignment = Alignment(horizontal='right')
         
         row_idx += 1
     
-    # Adjust column widths
-    column_widths = [8, 20, 15, 8, 15, 15, 20, 10, 18, 20, 15, 18]
+    # Adjust column widths (13 columns)
+    column_widths = [8, 20, 15, 8, 15, 15, 20, 10, 18, 20, 15, 18, 20]
     for idx, width in enumerate(column_widths, start=1):
         ws.column_dimensions[chr(64 + idx)].width = width
     
@@ -126,7 +141,7 @@ def export_to_excel(user_data: dict, filename: str = None):
     return filename
 
 
-def export_to_pdf(user_data: dict, filename: str = None):
+def export_to_pdf(user_data: dict, filename: str = None, target_currency: str = 'PHP'):
     """
     Export payroll data to PDF with metadata header.
     Returns the filename used.
@@ -135,9 +150,33 @@ def export_to_pdf(user_data: dict, filename: str = None):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"payroll_export_{timestamp}.pdf"
     
-    # Fetch all records
-    records = database.fetch_all()
+    # Fetch records for this user
+    records = database.fetch_all(user_data['id'])
     
+    target = (target_currency or 'PHP').upper()
+    try:
+        rate = currency.get_rate('php', target.lower()) if target != 'PHP' else 1.0
+    except Exception:
+        rate = 1.0
+     
+    # Try to register a Unicode font that supports the peso sign (₱)
+    font_regular = 'Helvetica'
+    font_bold = 'Helvetica-Bold'
+    try:
+        # Common Windows font paths for Arial
+        windir = os.environ.get('WINDIR', r'C:\Windows')
+        fonts_dir = os.path.join(windir, 'Fonts')
+        arial_path = os.path.join(fonts_dir, 'arial.ttf')
+        arial_bold_path = os.path.join(fonts_dir, 'arialbd.ttf')
+        if os.path.exists(arial_path) and os.path.exists(arial_bold_path):
+            pdfmetrics.registerFont(TTFont('Arial', arial_path))
+            pdfmetrics.registerFont(TTFont('Arial-Bold', arial_bold_path))
+            font_regular = 'Arial'
+            font_bold = 'Arial-Bold'
+    except Exception:
+        # If registration fails, default Helvetica will be used (may not show ₱)
+        pass
+
     # Create PDF document
     doc = SimpleDocTemplate(filename, pagesize=landscape(letter),
                            rightMargin=30, leftMargin=30,
@@ -154,7 +193,8 @@ def export_to_pdf(user_data: dict, filename: str = None):
         fontSize=16,
         textColor=colors.HexColor('#2C3E50'),
         spaceAfter=12,
-        alignment=1  # Center
+        alignment=1,  # Center
+        fontName=font_bold
     )
     
     # --- Title ---
@@ -169,13 +209,14 @@ def export_to_pdf(user_data: dict, filename: str = None):
         ['Exported By:', user_data.get('full_name') or user_data['username']],
         ['Username:', user_data['username']],
         ['Email:', user_data.get('email', 'N/A')],
-        ['Total Records:', str(len(records))]
+        ['Total Records:', str(len(records))],
+        ['Converted Currency:', target]
     ]
     
     metadata_table = Table(metadata_data, colWidths=[1.5*inch, 4*inch])
     metadata_table.setStyle(TableStyle([
-        ('FONT', (0, 0), (0, -1), 'Helvetica-Bold', 10),
-        ('FONT', (1, 0), (1, -1), 'Helvetica', 10),
+        ('FONT', (0, 0), (0, -1), font_bold, 10),
+        ('FONT', (1, 0), (1, -1), font_regular, 10),
         ('TEXTCOLOR', (0, 0), (-1, -1), colors.HexColor('#2C3E50')),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
@@ -186,7 +227,7 @@ def export_to_pdf(user_data: dict, filename: str = None):
     
     # --- Data Table ---
     table_data = [['ID', 'Name', 'Company ID', 'Age', 'Role', 'Department', 
-                   'Period', 'Overall Pay', 'Overall Ded.', 'Loan', 'Total Salary']]
+                   'Period', 'Overall Pay', 'Overall Ded.', 'Loan', 'Total Salary', f'Converted ({target})']]
     
     for record in records:
         monthly_deduction = int(record[8]) if record[8] is not None else 0
@@ -199,6 +240,7 @@ def export_to_pdf(user_data: dict, filename: str = None):
         total_gross = monthly_gross * months
         total_deductions = monthly_deduction * months
         total_net = int(record[10]) if record[10] is not None else 0
+        converted = int(round(total_net * rate))
         
         # Format period
         start_month = str(record[12] or '').strip()
@@ -213,15 +255,16 @@ def export_to_pdf(user_data: dict, filename: str = None):
             str(record[4])[:12],
             str(record[5])[:12],
             period,
-            f"₱{total_gross:,}",
-            f"₱{total_deductions:,}",
-            f"₱{loan:,}",
-            f"₱{total_net:,}"
+            f"PHP {total_gross:,}",
+            f"PHP {total_deductions:,}",
+            f"PHP {loan:,}",
+            f"PHP {total_net:,}",
+            f"{target} {converted:,}"
         ])
     
     # Create table with appropriate column widths
     col_widths = [0.4*inch, 1*inch, 0.9*inch, 0.4*inch, 0.9*inch, 
-                  0.9*inch, 1.2*inch, 1*inch, 1*inch, 0.8*inch, 1*inch]
+                  0.9*inch, 1.2*inch, 1*inch, 1*inch, 0.8*inch, 1*inch, 1.1*inch]
     
     data_table = Table(table_data, colWidths=col_widths, repeatRows=1)
     data_table.setStyle(TableStyle([
@@ -229,7 +272,7 @@ def export_to_pdf(user_data: dict, filename: str = None):
         ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
         ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 0), (-1, 0), font_bold),
         ('FONTSIZE', (0, 0), (-1, 0), 9),
         ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
         
@@ -238,7 +281,7 @@ def export_to_pdf(user_data: dict, filename: str = None):
         ('ALIGN', (0, 1), (0, -1), 'CENTER'),  # ID column
         ('ALIGN', (3, 1), (3, -1), 'CENTER'),  # Age column
         ('ALIGN', (7, 1), (-1, -1), 'RIGHT'),  # Money columns
-        ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
+        ('FONTNAME', (0, 1), (-1, -1), font_regular),
         ('FONTSIZE', (0, 1), (-1, -1), 8),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F8F9FA')]),
         

@@ -22,7 +22,9 @@ def get_rate(base: str, target: str, date: str = "latest") -> float:
             r = requests.get(url, timeout=6)
             r.raise_for_status()
             data = r.json()
-            # JSON structure: {"<base>": {"<target>": rate, ...}}
+            #********************************
+            #Parse JSON rates
+            #********************************
             rates = data.get(base, {})
             rate = rates.get(target)
             if rate is not None:
@@ -35,9 +37,9 @@ def get_rate(base: str, target: str, date: str = "latest") -> float:
 
 @lru_cache(maxsize=2)
 def list_currency_names(date: str = "latest") -> dict:
-    """Fetch a mapping of currency codes to names using the public API.
-    Returns a dict like {"php": "Philippine Peso", ...}. Cached for reuse.
-    """
+    #********************************
+    #Fetch currency names
+    #********************************
     urls = [
         LIST_URL.format(date=date),
         LIST_FALLBACK_URL.format(date=date),
@@ -58,6 +60,8 @@ def list_currency_names(date: str = "latest") -> dict:
 
 @lru_cache(maxsize=2)
 def list_currency_codes(date: str = "latest") -> list:
-    """Return a sorted list of currency codes from the API (lowercase)."""
+    #********************************
+    #Get currency codes
+    #********************************
     names = list_currency_names(date)
     return sorted(names.keys())

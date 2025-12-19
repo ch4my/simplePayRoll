@@ -9,14 +9,18 @@ _auth_conn = None
 _auth_cursor = None
 
 def hash_password(password: str, salt: str = None) -> tuple[str, str]:
-    """Hash password with salt using SHA-256."""
+    #********************************
+    #Hash password
+    #********************************
     if salt is None:
         salt = secrets.token_hex(16)
     pwd_hash = hashlib.sha256((password + salt).encode()).hexdigest()
     return pwd_hash, salt
 
 def connect_auth():
-    """Initialize authentication database with users table."""
+    #********************************
+    #Initialize auth database
+    #********************************
     global _auth_conn, _auth_cursor
     if _auth_conn is None:
         _auth_conn = sqlite3.connect(AUTH_DB_PATH)
@@ -38,25 +42,30 @@ def connect_auth():
     return _auth_conn, _auth_cursor
 
 def create_user(username: str, email: str, password: str, full_name: str = "", role: str = "user") -> tuple[bool, str]:
-    """
-    Create a new user account.
-    Returns (success: bool, message: str)
-    """
+    #********************************
+    #Create user account
+    #********************************
     conn, cursor = connect_auth()
     
-    # Validate inputs
+    #********************************
+    #Validate inputs
+    #********************************
     if not username.strip() or not email.strip() or not password.strip():
         return False, "Username, email, and password are required."
     
     if len(password) < 6:
         return False, "Password must be at least 6 characters long."
     
-    # Check if username or email already exists
+    #********************************
+    #Check existing user
+    #********************************
     cursor.execute('SELECT id FROM users WHERE username = ? OR email = ?', (username, email))
     if cursor.fetchone():
         return False, "Username or email already exists."
     
-    # Hash password and insert user
+    #********************************
+    #Hash and insert
+    #********************************
     pwd_hash, salt = hash_password(password)
     try:
         cursor.execute('''
@@ -71,10 +80,9 @@ def create_user(username: str, email: str, password: str, full_name: str = "", r
         return False, f"Error creating account: {str(e)}"
 
 def authenticate_user(username: str, password: str) -> tuple[bool, str, dict]:
-    """
-    Authenticate user credentials.
-    Returns (success: bool, message: str, user_data: dict)
-    """
+    #********************************
+    #Authenticate user
+    #********************************
     conn, cursor = connect_auth()
     
     cursor.execute('''
@@ -88,12 +96,16 @@ def authenticate_user(username: str, password: str) -> tuple[bool, str, dict]:
     
     user_id, uname, email, stored_hash, salt, full_name, role = row
     
-    # Verify password
+    #********************************
+    #Verify password
+    #********************************
     pwd_hash, _ = hash_password(password, salt)
     if pwd_hash != stored_hash:
         return False, "Invalid username or password.", {}
     
-    # Update last login
+    #********************************
+    #Update login time
+    #********************************
     cursor.execute('UPDATE users SET last_login = ? WHERE id = ?', 
                    (datetime.utcnow().isoformat(), user_id))
     conn.commit()
@@ -109,7 +121,9 @@ def authenticate_user(username: str, password: str) -> tuple[bool, str, dict]:
     return True, "Login successful!", user_data
 
 def close_auth_connection():
-    """Close authentication database connection."""
+    #********************************
+    #Close database
+    #********************************
     global _auth_conn, _auth_cursor
     if _auth_conn:
         _auth_conn.close()
