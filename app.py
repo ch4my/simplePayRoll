@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import tkinter as tk
-from theme import THEME
+from theme import THEME, FONTS
 from datetime import datetime
 import method
 import currency
@@ -31,20 +31,27 @@ class PayrollApp(tk.Tk):
     
     def _add_user_header(self):
         # ********************************
-        # Display user info
+        # Display user info & Header Toolbar
         # ********************************
-        header = tk.Frame(self, height=60, bg=THEME['bg'])
-        header.pack(side='top', fill='x', before=self.winfo_children()[0], padx=16, pady=(10,0))
+        header = tk.Frame(self, height=60, bg=THEME['navy'])
+        header.pack(side='top', fill='x', before=self.winfo_children()[0])
         
-        user_label = tk.Label(header, 
-                             text=f"User: {self.current_user['username']}",
-                             fg=THEME['text'], bg=THEME['bg'], font=('Arial', 10))
-        user_label.pack(side='top', anchor='w')
+        inner_header = tk.Frame(header, bg=THEME['navy'])
+        inner_header.pack(fill='x', padx=20, pady=10)
         
-        email_label = tk.Label(header, 
-                              text=f"Email: {self.current_user.get('email', '')}",
-                              fg=THEME['text'], bg=THEME['bg'], font=('Arial', 10))
-        email_label.pack(side='top', anchor='w')
+        user_info = tk.Frame(inner_header, bg=THEME['navy'])
+        user_info.pack(side='left')
+        
+        tk.Label(user_info, text="PAYROLL SYSTEM", font=FONTS['h2'], bg=THEME['navy'], fg=THEME['text_light']).pack(side='left', padx=(0, 20))
+        
+        tk.Label(user_info, 
+                             text=f"User: {self.current_user['username']}  |  Email: {self.current_user.get('email', '')}",
+                             fg=THEME['text_light'], bg=THEME['navy'], font=FONTS['body']).pack(side='left')
+
+        logout_btn = tk.Button(inner_header, text="Logout", font=FONTS['button'],
+                               bg=THEME['muted'], fg=THEME['navy'], cursor='hand2',
+                               command=self.on_logout, relief='flat', bd=0, padx=15, pady=5)
+        logout_btn.pack(side='right')
     
     def on_logout(self):
         # ********************************
@@ -84,34 +91,40 @@ class PayrollApp(tk.Tk):
         tk.Label(header_frame, text="Employee Payroll Data", font=('Arial', 14, 'bold'), bg=THEME['bg'], fg=THEME['text']).pack(side='left')
         
         # ********************************
-        # Action buttons
+        # Action buttons (Toolbar)
         # ********************************
         action_frame = tk.Frame(header_frame, bg=THEME['bg'])
         action_frame.pack(side='right')
         
-        # ********************************
-        # Delete button
-        # ********************************
-        delete_btn = tk.Button(action_frame, text="Delete", font=('Arial', 10), 
-                  bg='#f54242', fg=THEME['text_light'], width=8, height=1,
+        export_excel_btn = tk.Button(action_frame, text="Export Excel", font=FONTS['body_bold'],
+                         bg=THEME['primary'], fg=THEME['text_light'], width=12,
+                         activebackground=THEME['navy'], activeforeground=THEME['text_light'],
+                         cursor='hand2', command=self.on_export_excel, relief='flat', bd=0, padx=10, pady=5)
+        export_excel_btn.pack(side='left', padx=3)
+
+        export_pdf_btn = tk.Button(action_frame, text="Export PDF", font=FONTS['body_bold'],
+                       bg=THEME['primary_dark'], fg=THEME['text_light'], width=12,
+                       activebackground=THEME['navy'], activeforeground=THEME['text_light'],
+                       cursor='hand2', command=self.on_export_pdf, relief='flat', bd=0, padx=10, pady=5)
+        export_pdf_btn.pack(side='left', padx=(3, 15))
+
+        # Vertical separator
+        tk.Frame(action_frame, bg=THEME['muted'], width=1, height=20).pack(side='left', padx=5, pady=5)
+
+        delete_btn = tk.Button(action_frame, text="Delete", font=FONTS['body_bold'], 
+                  bg='#f54242', fg=THEME['text_light'], width=8,
                   activebackground=THEME['navy'], activeforeground=THEME['text_light'],
                   cursor='hand2', command=self.on_delete, relief='flat', bd=0, padx=10, pady=5)
         delete_btn.pack(side='left', padx=3)
         
-        # ********************************
-        # Refresh button
-        # ********************************
-        refresh_btn = tk.Button(action_frame, text="Refresh", font=('Arial', 10),
-                       bg='#4c80ba', fg=THEME['text_light'], width=8, height=1,
+        refresh_btn = tk.Button(action_frame, text="Refresh", font=FONTS['body_bold'],
+                       bg='#4c80ba', fg=THEME['text_light'], width=8,
                        activebackground=THEME['primary'], activeforeground=THEME['text_light'],
                        cursor='hand2', command=self.on_refresh, relief='flat', bd=0, padx=10, pady=5)
         refresh_btn.pack(side='left', padx=3)
         
-        # ********************************
-        # Add button
-        # ********************************
-        add_btn = tk.Button(action_frame, text="Add", font=('Arial', 10),
-                   bg='#5bc763', fg=THEME['text_light'], width=8, height=1,
+        add_btn = tk.Button(action_frame, text="Add", font=FONTS['body_bold'],
+                   bg='#5bc763', fg=THEME['text_light'], width=8,
                    activebackground=THEME['primary_dark'], activeforeground=THEME['text_light'],
                    cursor='hand2', command=self.on_add_employee, relief='flat', bd=0, padx=10, pady=5)
         add_btn.pack(side='left', padx=3)
@@ -136,19 +149,22 @@ class PayrollApp(tk.Tk):
         # Table styling
         # ********************************
         style = ttk.Style(self)
+        style.theme_use('default')  # Use default theme as base to allow color overrides
         style.configure('Treeview',
-                    background=THEME['bg'],
+                    background='#FFFFFF',
                     foreground=THEME['text'],
-                    fieldbackground=THEME['bg'],
-                    rowheight=22,
-                    borderwidth=0)
+                    fieldbackground='#FFFFFF',
+                    rowheight=26,
+                    borderwidth=0,
+                    font=FONTS['body'])
         style.map('Treeview', background=[('selected', THEME['muted'])], foreground=[('selected', THEME['navy'])])
         style.configure('Treeview.Heading',
                     background=THEME['navy'],
-                    foreground=THEME['text'],
-                    padding=(6, 4),
-                    font=('Arial', 10, 'bold'))
-        self.tree = ttk.Treeview(table_frame, columns=cols, show='headings', height=8.5, style='Treeview')
+                    foreground=THEME['text_light'],
+                    padding=(6, 6),
+                    borderwidth=0,
+                    font=FONTS['body_bold'])
+        self.tree = ttk.Treeview(table_frame, columns=cols, show='headings', height=8, style='Treeview')
         for c in cols:
             self.tree.heading(c, text=c)
             if c in ('Overall Deductions','Overall Pay','Total Salary','Convert Into','Loan'):
@@ -197,58 +213,39 @@ class PayrollApp(tk.Tk):
         # ********************************
         # Summary Section
         # ********************************
-        summary = tk.LabelFrame(self, text="Employee Selected Summary", bg=THEME['bg'], fg=THEME['text'])
+        summary = tk.LabelFrame(self, text="Employee Selected Summary", bg=THEME['bg'], fg=THEME['text'], font=FONTS['body_bold'])
         summary.pack(fill='x', padx=16, pady=6)
         sum_inner = tk.Frame(summary, bg=THEME['bg'])
         sum_inner.pack(fill='both', expand=True, padx=10, pady=10)
 
         self.summary_labels = {}
         keys = ['Name','ID','Age','Role','Department','Months','Overall Pay','Overall Deductions','Loan','Total Salary']
+        
+        # Configure 4 columns: label1, value1, label2, value2
         sum_inner.columnconfigure(1, weight=1)
-        for i,k in enumerate(keys):
-            tk.Label(sum_inner, text=k+':', width=16, anchor='w').grid(row=i, column=0, sticky='w', padx=6, pady=2)
-            lbl = tk.Label(sum_inner, text='', anchor='w')
+        sum_inner.columnconfigure(3, weight=1)
+        
+        for i, k in enumerate(keys):
+            row = i % 5
+            col_offset = (i // 5) * 2
+            tk.Label(sum_inner, text=k+':', width=16, anchor='w', font=FONTS['body'], bg=THEME['bg'], fg=THEME['navy']).grid(row=row, column=col_offset, sticky='w', padx=6, pady=4)
+            lbl = tk.Label(sum_inner, text='', anchor='w', font=FONTS['body_bold'], bg=THEME['bg'], fg=THEME['text'])
             if k == 'Overall Deductions':
-                lbl.configure(fg='red')
+                lbl.configure(fg='#f54242')
             elif k == 'Overall Pay':
-                lbl.configure(fg='green')
+                lbl.configure(fg='#5bc763')
             elif k == 'Total Salary':
-                lbl.configure(fg='blue', font=('TkDefaultFont', 10, 'bold'))
-            lbl.configure(wraplength=800, justify='left')
-            lbl.grid(row=i, column=1, sticky='w', padx=6, pady=2)
+                lbl.configure(fg=THEME['primary'], font=FONTS['h3'])
+            lbl.configure(wraplength=400, justify='left')
+            lbl.grid(row=row, column=col_offset+1, sticky='w', padx=6, pady=4)
             self.summary_labels[k] = lbl
 
         bottom_frame = tk.Frame(self, bg=THEME['bg'])
         bottom_frame.pack(fill='x', padx=16, pady=10)
         
         # ********************************
-        # Export buttons
+        # Export buttons are now moved
         # ********************************
-        export_frame = tk.Frame(bottom_frame, bg=THEME['bg'])
-        export_frame.pack(side='left')
-        
-        export_excel_btn = tk.Button(export_frame, text="Export to Excel", 
-                         bg=THEME['primary'], fg=THEME['text_light'],
-                                     font=('Arial', 11, 'bold'), cursor='hand2',
-                         command=self.on_export_excel, relief='flat', bd=0,
-                                     padx=20, pady=10)
-        export_excel_btn.pack(side='left', padx=(0, 10))
-
-        export_pdf_btn = tk.Button(export_frame, text="Export to PDF", 
-                       bg=THEME['primary_dark'], fg=THEME['text_light'],
-                                   font=('Arial', 11, 'bold'), cursor='hand2',
-                       command=self.on_export_pdf, relief='flat', bd=0,
-                                   padx=20, pady=10)
-        export_pdf_btn.pack(side='left')
-        
-        # ********************************
-        # Logout button
-        # ********************************
-        logout_bottom_btn = tk.Button(bottom_frame, text="Log out", bg=THEME['primary_dark'], fg=THEME['text_light'],
-                                     font=('Arial', 12, 'bold'), cursor='hand2',
-                         command=self.on_logout, relief='flat', bd=0,
-                                     padx=30, pady=10)
-        logout_bottom_btn.pack(side='right')
 
         self.tree.bind('<<TreeviewSelect>>', self._on_tree_select)
         self._load_existing()
@@ -262,7 +259,7 @@ class PayrollApp(tk.Tk):
     def _show_employee_dialog(self, edit_record=None):
         dialog = tk.Toplevel(self)
         dialog.title("Add Payroll Data" if not edit_record else "Edit Payroll Data")
-        dialog.geometry("450x600")
+        dialog.geometry("700x450")
         dialog.resizable(False, False)
         dialog.transient(self)
         dialog.grab_set()
@@ -274,7 +271,7 @@ class PayrollApp(tk.Tk):
         header = tk.Frame(dialog, bg=THEME['navy'], height=60)
         header.pack(fill='x')
         tk.Label(header, text="Add Payroll Data" if not edit_record else "Edit Payroll Data", 
-            font=('Arial', 16, 'bold'), bg=THEME['navy'], fg=THEME['text_light']).pack(pady=15)
+            font=FONTS['h2'], bg=THEME['navy'], fg=THEME['text_light']).pack(pady=15)
         form_frame = tk.Frame(dialog, padx=30, pady=20, bg=THEME['bg'])
         form_frame.pack(fill='both', expand=True)
         
@@ -295,21 +292,26 @@ class PayrollApp(tk.Tk):
             ('Age:', 'age'),
             ('Role:', 'role'),
             ('Department:', 'department'),
+            ('Loan:', 'loan'),
             ('Start Date (YYYY/MM):', 'start_date'),
             ('End Date (YYYY/MM):', 'end_date'),
-            ('Loan:', 'loan'),
         ]
         
         entries = {}
         for i, (label, key) in enumerate(fields):
-            tk.Label(form_frame, text=label, anchor='w', font=('Arial', 10)).grid(row=i, column=0, sticky='w', pady=10, padx=(0, 10))
+            row = i // 2
+            col = (i % 2) * 2
+            
+            tk.Label(form_frame, text=label, anchor='w', font=FONTS['body'], bg=THEME['bg'], fg=THEME['navy']).grid(row=row, column=col, sticky='w', pady=15, padx=(0, 10))
             if key in ('start_date', 'end_date'):
                 var = tk.StringVar(value=current_date.strftime('%Y/%m'))
-                widget = ttk.Combobox(form_frame, textvariable=var, values=months_options, width=28, font=('Arial', 10), state='readonly')
+                widget = ttk.Combobox(form_frame, textvariable=var, values=months_options, width=22, font=FONTS['body'], state='readonly')
+                widget.grid(row=row, column=col+1, pady=15, padx=(0, 30))
             else:
                 var = tk.StringVar()
-                widget = tk.Entry(form_frame, textvariable=var, width=30, font=('Arial', 10))
-            widget.grid(row=i, column=1, pady=10, padx=(0, 0), ipady=5)
+                widget = tk.Entry(form_frame, textvariable=var, width=24, font=FONTS['body'], highlightthickness=1, highlightbackground=THEME['muted'], bd=0)
+                widget.grid(row=row, column=col+1, pady=15, padx=(0, 30), ipady=5)
+            
             entries[key] = var
 
             if edit_record:
@@ -328,12 +330,12 @@ class PayrollApp(tk.Tk):
         
         save_btn = tk.Button(btn_frame, text="Save", bg=THEME['primary'], fg=THEME['text_light'],
                     command=on_save, cursor='hand2', relief='flat', bd=0,
-                            font=('Arial', 11, 'bold'), padx=30, pady=8)
+                            font=FONTS['button'], padx=30, pady=8)
         save_btn.pack(side='left', padx=8)
         
         cancel_btn = tk.Button(btn_frame, text="Cancel", bg=THEME['muted'], fg=THEME['navy'],
                       command=dialog.destroy, cursor='hand2', relief='flat', bd=0,
-                              font=('Arial', 11, 'bold'), padx=30, pady=8)
+                              font=FONTS['button'], padx=30, pady=8)
         cancel_btn.pack(side='left', padx=8)
     
     def on_compute(self, entries=None, dialog=None):

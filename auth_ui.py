@@ -1,7 +1,7 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
 import auth_database
-from theme import THEME
+from theme import THEME, FONTS
 
 class AuthWindow(tk.Tk):
     #********************************
@@ -11,7 +11,7 @@ class AuthWindow(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Payroll System - Authentication")
-        self.geometry("450x600")
+        self.geometry("450x650")
         self.resizable(False, False)
         self.configure(bg=THEME['bg'])
         
@@ -38,7 +38,7 @@ class AuthWindow(tk.Tk):
         #********************************
         header = tk.Frame(self, bg=THEME['navy'], height=80)
         header.pack(fill='x')
-        tk.Label(header, text="Payroll System", font=('Arial', 20, 'bold'), 
+        tk.Label(header, text="Payroll System", font=FONTS['h1'], 
                  bg=THEME['navy'], fg=THEME['text_light']).pack(pady=20)
 
         self.form_container = tk.Frame(self, bg=THEME['bg'])
@@ -56,27 +56,27 @@ class AuthWindow(tk.Tk):
         container = tk.Frame(self.form_container, bg=THEME['bg'])
         container.pack(expand=True, pady=40)
         
-        tk.Label(container, text="Welcome Back!", font=('Arial', 18, 'bold'), 
+        tk.Label(container, text="Welcome Back!", font=FONTS['h2'], 
              bg=THEME['bg'], fg=THEME['text']).pack(pady=(0, 30))
         
-        tk.Label(container, text="Username:", font=('Arial', 10), 
+        tk.Label(container, text="Username:", font=FONTS['body'], 
              bg=THEME['bg'], fg=THEME['text']).pack(anchor='w', padx=40)
-        self.login_username = tk.Entry(container, font=('Arial', 12), width=30, 
+        self.login_username = tk.Entry(container, font=FONTS['body'], width=30, 
                            bg=THEME['bg'], fg=THEME['text'], 
                            highlightthickness=1, highlightbackground=THEME['muted'], bd=0, insertbackground=THEME['text'])
-        self.login_username.pack(pady=(5, 15), padx=40, ipady=5)
+        self.login_username.pack(pady=(5, 15), padx=40, ipady=6)
         
-        tk.Label(container, text="Password:", font=('Arial', 10), 
+        tk.Label(container, text="Password:", font=FONTS['body'], 
              bg=THEME['bg'], fg=THEME['text']).pack(anchor='w', padx=40)
-        self.login_password = tk.Entry(container, font=('Arial', 12), width=30, show='●',
+        self.login_password = tk.Entry(container, font=FONTS['body'], width=30, show='●',
                            bg=THEME['bg'], fg=THEME['text'],
                            highlightthickness=1, highlightbackground=THEME['muted'], bd=0, insertbackground=THEME['text'])
-        self.login_password.pack(pady=(5, 30), padx=40, ipady=5)
+        self.login_password.pack(pady=(5, 30), padx=40, ipady=6)
         
         #********************************
         #Login button
         #********************************
-        login_btn = tk.Button(container, text="Log In", font=('Arial', 12, 'bold'), 
+        login_btn = tk.Button(container, text="Log In", font=FONTS['button'], 
                      bg=THEME['primary'], fg=THEME['text_light'], width=20, height=2,
                      activebackground=THEME['primary_dark'], activeforeground=THEME['text_light'],
                      cursor='hand2', command=self.on_login,
@@ -85,12 +85,12 @@ class AuthWindow(tk.Tk):
         self._add_hover_effect(login_btn, THEME['primary'], THEME['primary_dark'])
         
         tk.Label(container, text="──────────  OR  ──────────", 
-             bg=THEME['bg'], fg=THEME['muted'], font=('Arial', 9)).pack(pady=20)
+             bg=THEME['bg'], fg=THEME['muted'], font=FONTS['small']).pack(pady=20)
         
         #********************************
         #Signup button
         #********************************
-        signup_btn = tk.Button(container, text="Create New Account", font=('Arial', 10), 
+        signup_btn = tk.Button(container, text="Create New Account", font=FONTS['body'], 
                       bg=THEME['muted'], fg=THEME['navy'], width=25, height=2,
                       activebackground=THEME['primary'], activeforeground=THEME['text_light'],
                       cursor='hand2', command=self._show_signup_form,
@@ -106,51 +106,51 @@ class AuthWindow(tk.Tk):
         
         self.current_view = "signup"
         container = tk.Frame(self.form_container, bg=THEME['bg'])
-        container.pack(expand=True, pady=20)
+        container.pack(expand=True, pady=10)
         
-        tk.Label(container, text="Create Account", font=('Arial', 18, 'bold'), 
-                 bg=THEME['bg'], fg=THEME['text']).pack(pady=(0, 20))
+        tk.Label(container, text="Create Account", font=FONTS['h2'], 
+                 bg=THEME['bg'], fg=THEME['text']).pack(pady=(0, 15))
         
-        tk.Label(container, text="Full Name:", font=('Arial', 10), 
+        tk.Label(container, text="Full Name:", font=FONTS['body'], 
                  bg=THEME['bg'], fg=THEME['text']).pack(anchor='w', padx=40)
-        self.signup_fullname = tk.Entry(container, font=('Arial', 11), width=30,
+        self.signup_fullname = tk.Entry(container, font=FONTS['body'], width=30,
                                         bg=THEME['bg'], fg=THEME['text'],
                                         highlightthickness=1, highlightbackground=THEME['muted'], bd=0, insertbackground=THEME['text'])
-        self.signup_fullname.pack(pady=5, padx=40, ipady=2)
+        self.signup_fullname.pack(pady=5, padx=40, ipady=4)
 
-        tk.Label(container, text="Email:", font=('Arial', 10), 
+        tk.Label(container, text="Email:", font=FONTS['body'], 
                  bg=THEME['bg'], fg=THEME['text']).pack(anchor='w', padx=40)
-        self.signup_email = tk.Entry(container, font=('Arial', 11), width=30,
+        self.signup_email = tk.Entry(container, font=FONTS['body'], width=30,
                                      bg=THEME['bg'], fg=THEME['text'],
                                      highlightthickness=1, highlightbackground=THEME['muted'], bd=0, insertbackground=THEME['text'])
-        self.signup_email.pack(pady=5, padx=40, ipady=2)
+        self.signup_email.pack(pady=5, padx=40, ipady=4)
         
-        tk.Label(container, text="Username:", font=('Arial', 10), 
+        tk.Label(container, text="Username:", font=FONTS['body'], 
                  bg=THEME['bg'], fg=THEME['text']).pack(anchor='w', padx=40)
-        self.signup_username = tk.Entry(container, font=('Arial', 11), width=30,
+        self.signup_username = tk.Entry(container, font=FONTS['body'], width=30,
                                         bg=THEME['bg'], fg=THEME['text'],
                                         highlightthickness=1, highlightbackground=THEME['muted'], bd=0, insertbackground=THEME['text'])
-        self.signup_username.pack(pady=5, padx=40, ipady=2)
+        self.signup_username.pack(pady=5, padx=40, ipady=4)
         
-        tk.Label(container, text="Password (min 6 characters):", font=('Arial', 10), 
+        tk.Label(container, text="Password (min 6 characters):", font=FONTS['body'], 
                  bg=THEME['bg'], fg=THEME['text']).pack(anchor='w', padx=40)
-        self.signup_password = tk.Entry(container, font=('Arial', 11), width=30, show='●',
+        self.signup_password = tk.Entry(container, font=FONTS['body'], width=30, show='●',
                                         bg=THEME['bg'], fg=THEME['text'],
                                         highlightthickness=1, highlightbackground=THEME['muted'], bd=0, insertbackground=THEME['text'])
-        self.signup_password.pack(pady=5, padx=40, ipady=2)
+        self.signup_password.pack(pady=5, padx=40, ipady=4)
         
-        tk.Label(container, text="Confirm Password:", font=('Arial', 10), 
+        tk.Label(container, text="Confirm Password:", font=FONTS['body'], 
                  bg=THEME['bg'], fg=THEME['text']).pack(anchor='w', padx=40)
-        self.signup_confirm = tk.Entry(container, font=('Arial', 11), width=30, show='●',
+        self.signup_confirm = tk.Entry(container, font=FONTS['body'], width=30, show='●',
                                        bg=THEME['bg'], fg=THEME['text'],
                                        highlightthickness=1, highlightbackground=THEME['muted'], bd=0, insertbackground=THEME['text'])
-        self.signup_confirm.pack(pady=5, padx=40, ipady=2)
+        self.signup_confirm.pack(pady=5, padx=40, ipady=4)
 
         #********************************
         #Back to login link
         #********************************
         back_link = tk.Label(container, text="Back to Log In", 
-                     font=('Arial', 9, 'underline'),
+                     font=(FONTS['small'][0], FONTS['small'][1], 'underline'),
                      bg=THEME['bg'], fg=THEME['primary'], cursor='hand2')
         back_link.pack(anchor='e', pady=(2, 10), padx=(0, 40))
         back_link.bind('<Button-1>', lambda e: self._show_login_form())
@@ -159,7 +159,7 @@ class AuthWindow(tk.Tk):
         #********************************
         #Signup button
         #********************************
-        signup_btn = tk.Button(container, text="Create Account", font=('Arial', 12, 'bold'), 
+        signup_btn = tk.Button(container, text="Create Account", font=FONTS['button'], 
                               bg=THEME['primary'], fg=THEME['text_light'], width=23, height=2,
                               activebackground=THEME['primary_dark'], activeforeground=THEME['text_light'],
                               cursor='hand2', command=self.on_signup,
